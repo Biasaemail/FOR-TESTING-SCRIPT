@@ -1,14 +1,3 @@
---- SALIN KODE LUA DI BAWAH INI ---
-
---[[
-    MODIFIED FLING SCRIPT V2
-    - Reworked FlingPlayer function with "weaving" motion to hit moving targets.
-    - Implemented a highly robust post-fling cleanup sequence to prevent player death and ensure safe return.
-    - Overhauled Fling Aura logic to fling multiple nearby players and prevent getting "stuck" on one target.
-    - Slightly reduced GUI size for better mobile compatibility.
-    - Added more detailed status messages.
-]]
-
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -570,36 +559,3 @@ end)
 
 print("Fling GUI V2 Loaded: Weaving Motion, Safe Cleanup, Multi-Aura.")
 ShowStatus("Fling GUI V2 Dimuat.", Color3.fromRGB(150,200,255), 5)
-
-
---- PENJELASAN PERUBAHAN ---
-
-### Penjelasan Perubahan Utama:
-
-1.  **Gerakan Menenun (Weaving Motion) pada `FlingPlayer`**:
-    *   **Masalah:** Target yang bergerak sulit untuk "ditabrak" secara konsisten.
-    *   **Solusi:** Saya menambahkan `weaveDistance` yang dihitung berdasarkan `WalkSpeed` target. Di dalam loop fling, karakter Anda sekarang tidak hanya berputar di sekitar target, tetapi juga bergerak maju-mundur (`math.sin(...) * weaveDistance`). Gerakan ini secara drastis meningkatkan kemungkinan tubuh Anda "menyapu" dan menembus tubuh target, menyebabkan fling yang jauh lebih andal bahkan saat mereka berlari.
-
-2.  **Pembersihan Super Aman (Safest Cleanup Logic)**:
-    *   **Masalah:** Karakter Anda terkadang mati atau tidak kembali ke posisi semula setelah fling.
-    *   **Solusi:** Logika pembersihan di akhir fungsi `FlingPlayer` telah dirombak total dengan urutan yang sangat spesifik dan aman:
-        1.  **`Anchored = true`**: Karakter Anda "dibekukan" di udara. Ini adalah langkah paling krusial untuk menghentikan semua perhitungan fisika, termasuk *fall damage*.
-        2.  **`task.wait()`**: Jeda singkat untuk memastikan status `Anchored` diproses oleh engine.
-        3.  **Teleportasi**: `CFrame` dikembalikan ke posisi awal saat karakter dalam keadaan beku.
-        4.  **Reset Kecepatan**: Semua `AssemblyLinearVelocity` dan `AssemblyAngularVelocity` di-reset ke nol untuk menghilangkan sisa momentum.
-        5.  **`Anchored = false`**: Karakter "dicairkan" kembali dan fisika normal berlaku.
-        6.  **`ChangeState(GettingUp)`**: Memaksa humanoid untuk "bangun", me-reset state animasinya dan memastikan kontrol kembali normal.
-    *   Urutan ini secara signifikan mengurangi risiko kematian atau bug fisika setelah fling.
-
-3.  **Logika Fling Aura yang Cerdas**:
-    *   **Masalah:** Aura hanya men-fling satu pemain, lalu karakter Anda ikut terseret dan tidak kembali.
-    *   **Solusi:** Saya menerapkan sistem *cooldown* menggunakan tabel `recentlyFlung`.
-        *   Saat aura mendeteksi pemain di dekatnya, ia akan memeriksa apakah pemain itu ada di daftar `recentlyFlung`.
-        *   Jika tidak, aura akan men-fling pemain tersebut, **segera menambahkannya ke daftar `recentlyFlung`**, dan mengatur timer untuk menghapusnya setelah 3 detik.
-        *   Panggilan `FlingPlayer` dari aura sekarang menggunakan `task.spawn()`. Ini membuat proses fling berjalan di *thread* terpisah, sehingga loop aura dapat **langsung melanjutkan** untuk mencari dan men-fling pemain lain di dekatnya tanpa harus menunggu fling pertama selesai.
-    *   Hasilnya, aura sekarang dapat secara efektif men-fling beberapa target yang berdekatan dalam satu siklus pengecekan, dan karakter Anda tidak akan "terkunci" pada satu target.
-
-4.  **GUI Lebih Ramping**:
-    *   **Masalah:** GUI terlalu besar di layar ponsel.
-    *   **Solusi:** Ukuran `MainFrame` telah dikurangi dari `350x450` piksel menjadi `300x400` piksel. Ini memberikan tampilan yang lebih ringkas di perangkat seluler tanpa menjadi terlalu kecil di PC.
-
