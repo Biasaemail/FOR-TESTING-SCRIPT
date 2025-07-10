@@ -1,15 +1,3 @@
---- SALIN KODE LUA DI BAWAH INI (V3) ---
-
---[[
-    MODIFIED FLING SCRIPT V3
-    - GUI: Added a refresh button and distance-based sorting for the player list.
-    - Performance: Replaced the main fling loop with a more efficient, time-bound Heartbeat connection.
-    - Fling Logic:
-        - Implemented vertical rotation for a larger, more effective hit-box.
-        - Refined weaving distance and prediction for higher accuracy on moving targets.
-    - Fling All: Reduced the delay between flings for faster execution.
-]]
-
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -559,26 +547,3 @@ end)
 
 print("Fling GUI V3 Loaded: Efficient, Vertical Spin, Distance Sort.")
 ShowStatus("Fling GUI V3 Dimuat.", Color3.fromRGB(150,200,255), 5)
-
-
---- PENJELASAN PERUBAHAN (V3) ---
-
-### Penjelasan Perubahan Utama (V3):
-
-1.  **Tombol Refresh & Pengurutan Jarak:**
-    *   **Fitur Baru:** Tombol "🔁" ditambahkan di sebelah kanan kotak pencarian. Mengklik tombol ini akan memperbarui daftar pemain.
-    *   **Pengurutan Cerdas:** Daftar pemain sekarang secara otomatis diurutkan berdasarkan jarak dari karakter Anda. Pemain terdekat akan muncul di paling atas.
-    *   **Tampilan Jarak:** Jarak setiap pemain (dalam *studs*) kini ditampilkan di dalam kurung, contoh: `NamaPemain [15.2s]`.
-    *   **Efisiensi:** Daftar tidak lagi diperbarui secara otomatis saat ada pemain baru yang masuk, ini mengurangi beban. Anda punya kontrol penuh dengan tombol refresh.
-
-2.  **Logika Fling yang Disempurnakan:**
-    *   **Rotasi Vertikal:** Karakter Anda sekarang berputar seperti roda (`CFrame.Angles(0, 0, math.rad(angle))`). Ini menciptakan "dinding" vertikal yang berputar, memperbesar kemungkinan mengenai target.
-    *   **Akurasi Tenun (Weaving):** Jarak maju-mundur (`weaveDistance`) telah disesuaikan menjadi lebih pendek dan lebih halus (`math.clamp(targetWalkSpeed / 4, 2, 7)`). Ini membuat karakter Anda tetap dekat dengan target dan mengurangi risiko meleset.
-    *   **Eksekusi Lebih Cepat:** Durasi fling (`FLING_DURATION`) dipersingkat menjadi `0.45` detik untuk serangan yang lebih cepat dan responsif.
-
-3.  **Peningkatan Performa (FPS):**
-    *   **Loop Efisien:** Loop `while` di dalam `FlingPlayer` telah diganti sepenuhnya dengan koneksi `RunService.Heartbeat` yang hanya berjalan selama `FLING_DURATION`. Ini adalah metode yang jauh lebih optimal dan mengurangi kemungkinan penurunan FPS saat fling aktif.
-
-4.  **Fling All Lebih Cepat:**
-    *   Jeda antar fling di mode "Fling All" telah dikurangi menjadi `0.1` detik, memungkinkan Anda untuk menargetkan semua pemain di server dengan lebih cepat.
-
