@@ -37,7 +37,7 @@ local AuraToggleButton = Instance.new("TextButton")
 local StatusLabel = Instance.new("TextLabel")
 
 -- GUI Setup
-ScreenGui.Name = "FlingGUI"
+ScreenGui.Name = "FlingGUI v.4"
 ScreenGui.Parent = Player:WaitForChild("PlayerGui")
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
