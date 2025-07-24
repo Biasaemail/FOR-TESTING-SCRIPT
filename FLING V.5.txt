@@ -1,13 +1,3 @@
--- Fling GUI V3 by AI
--- Perbaikan:
--- 1. Anti-bug saat fling sambil duduk.
--- 2. Gerakan menenun (weaving) kini mengikuti arah target (maju-mundur) bukan side-to-side.
--- 3. Weaving dan rotasi dibuat super cepat dan agresif untuk "mengebor" target.
--- 4. Posisi kini menargetkan kepala lawan untuk akurasi maksimal.
--- 5. Logika Fling All diberi debounce untuk mencegah spam dan bug.
--- 6. Logika pembersihan (cleanup) diperkuat untuk mencegah karakter pemain lokal terbang setelah fling (terutama di Aura).
--- 7. Logika prediksi disempurnakan untuk target yang bergerak cepat dan melompat.
-
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
