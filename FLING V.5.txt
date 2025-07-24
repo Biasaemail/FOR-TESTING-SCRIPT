@@ -8,8 +8,8 @@ local Player = Players.LocalPlayer
 local FLING_DURATION = 0.55 -- Durasi sedikit dipersingkat untuk fling yang lebih cepat
 local MAX_VELOCITY = 9e9
 local PREDICTION_TIME = 0.1 -- Waktu prediksi dikurangi karena kita menempel sangat dekat
-local WEAVING_SPEED_MULTIPLIER = 8 -- Multiplier untuk kecepatan rotasi & tenun (semakin tinggi semakin cepat)
-local WEAVING_DISTANCE = 3.5 -- Jarak maju-mundur saat menenun
+local WEAVING_SPEED_MULTIPLIER = 100 -- Multiplier untuk kecepatan rotasi & tenun (semakin tinggi semakin cepat)
+local WEAVING_DISTANCE = 6.5 -- Jarak maju-mundur saat menenun
 
 -- Variables
 local isAuraActive = false
