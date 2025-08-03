@@ -1,0 +1,558 @@
+--[[
+    Fling GUI V3
+    Update oleh AI
+    - Logika Fling "Brutal" dengan Weaving Directional: Gerakan maju-mundur kini mengikuti arah lari target.
+    - Stabilitas Penuh: Diperkenalkan flag 'isFlinging' untuk mencegah tumpang tindih fungsi dan bug karakter tersangkut.
+    - Fling Aura & Fling All yang lebih aman dan berurutan.
+    - Peningkatan keandalan dan efektivitas terhadap target yang bergerak aktif.
+]]
+
+-- Services
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local Player = Players.LocalPlayer
+
+-- Constants
+local FLING_DURATION = 0.55 -- Durasi sedikit lebih pendek untuk serangan cepat
+local MAX_VELOCITY = 1e10 -- Kecepatan lebih tinggi untuk efek maksimal
+local PREDICTION_TIME = 0.1 -- Prediksi lebih agresif untuk target cepat
+
+-- State Variables
+local isFlinging = false -- [PENTING] Flag untuk mencegah fling tumpang tindih
+local isAuraActive = false
+local auraRange = 20
+local auraCheckInterval = 0.2
+local auraFlingConnection = nil
+local recentlyFlung = {} -- Cooldown per pemain untuk aura
+
+-- Debounce
+local searchDebounceTime = 0.25
+local searchDebounceThread = nil
+
+-- Create GUI Elements (Struktur GUI sama seperti V2)
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local UICorner = Instance.new("UICorner")
+local Title = Instance.new("TextLabel")
+local SearchBox = Instance.new("TextBox")
+local PlayerList = Instance.new("ScrollingFrame")
+local UIListLayout = Instance.new("UIListLayout")
+local FlingPlayerButton = Instance.new("TextButton")
+local FlingAllPlayersButton = Instance.new("TextButton")
+local AuraRangeLabel = Instance.new("TextLabel")
+local AuraRangeInput = Instance.new("TextBox")
+local AuraToggleButton = Instance.new("TextButton")
+local StatusLabel = Instance.new("TextLabel")
+
+-- GUI Setup
+ScreenGui.Name = "FlingGUI_V3"
+ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -200)
+MainFrame.Size = UDim2.new(0, 300, 0, 400)
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Visible = true
+
+UICorner.Parent = MainFrame
+UICorner.CornerRadius = UDim.new(0, 8)
+
+Title.Name = "Title"
+Title.Parent = MainFrame
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 0, 0.02, 0)
+Title.Size = UDim2.new(1, 0, 0.08, 0)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "Fling GUI V3"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 20
+
+SearchBox.Name = "SearchBox"
+SearchBox.Parent = MainFrame
+SearchBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+SearchBox.Position = UDim2.new(0.05, 0, 0.12, 0)
+SearchBox.Size = UDim2.new(0.9, 0, 0.07, 0)
+SearchBox.Font = Enum.Font.Gotham
+SearchBox.PlaceholderText = "Search player..."
+SearchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+SearchBox.TextSize = 14
+local searchBoxCorner = Instance.new("UICorner")
+searchBoxCorner.CornerRadius = UDim.new(0, 6)
+searchBoxCorner.Parent = SearchBox
+
+PlayerList.Name = "PlayerList"
+PlayerList.Parent = MainFrame
+PlayerList.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+PlayerList.Position = UDim2.new(0.05, 0, 0.21, 0)
+PlayerList.Size = UDim2.new(0.9, 0, 0.25, 0)
+PlayerList.CanvasSize = UDim2.new(0, 0, 0, 0)
+PlayerList.ScrollBarThickness = 4
+local playerListCorner = Instance.new("UICorner")
+playerListCorner.CornerRadius = UDim.new(0, 6)
+playerListCorner.Parent = PlayerList
+UIListLayout.Parent = PlayerList
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 2)
+
+FlingPlayerButton.Name = "FlingPlayerButton"
+FlingPlayerButton.Parent = MainFrame
+FlingPlayerButton.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+FlingPlayerButton.Position = UDim2.new(0.05, 0, 0.48, 0)
+FlingPlayerButton.Size = UDim2.new(0.9, 0, 0.08, 0)
+FlingPlayerButton.Font = Enum.Font.GothamBold
+FlingPlayerButton.Text = "FLING PLAYER"
+FlingPlayerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+FlingPlayerButton.TextSize = 16
+local flingPlayerBtnCorner = Instance.new("UICorner")
+flingPlayerBtnCorner.CornerRadius = UDim.new(0, 6)
+flingPlayerBtnCorner.Parent = FlingPlayerButton
+
+FlingAllPlayersButton.Name = "FlingAllPlayersButton"
+FlingAllPlayersButton.Parent = MainFrame
+FlingAllPlayersButton.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+FlingAllPlayersButton.Position = UDim2.new(0.05, 0, 0.58, 0)
+FlingAllPlayersButton.Size = UDim2.new(0.9, 0, 0.08, 0)
+FlingAllPlayersButton.Font = Enum.Font.GothamBold
+FlingAllPlayersButton.Text = "FLING ALL PLAYERS"
+FlingAllPlayersButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+FlingAllPlayersButton.TextSize = 16
+local flingAllBtnCorner = Instance.new("UICorner")
+flingAllBtnCorner.CornerRadius = UDim.new(0, 6)
+flingAllBtnCorner.Parent = FlingAllPlayersButton
+
+AuraRangeLabel.Name = "AuraRangeLabel"
+AuraRangeLabel.Parent = MainFrame
+AuraRangeLabel.BackgroundTransparency = 1
+AuraRangeLabel.Position = UDim2.new(0.05, 0, 0.68, 0)
+AuraRangeLabel.Size = UDim2.new(0.45, 0, 0.05, 0)
+AuraRangeLabel.Font = Enum.Font.Gotham
+AuraRangeLabel.Text = "Aura Range:"
+AuraRangeLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+AuraRangeLabel.TextSize = 14
+AuraRangeLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+AuraRangeInput.Name = "AuraRangeInput"
+AuraRangeInput.Parent = MainFrame
+AuraRangeInput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+AuraRangeInput.Position = UDim2.new(0.5, 0, 0.68, 0)
+AuraRangeInput.Size = UDim2.new(0.45, 0, 0.05, 0)
+AuraRangeInput.Font = Enum.Font.Gotham
+AuraRangeInput.Text = tostring(auraRange)
+AuraRangeInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+AuraRangeInput.TextSize = 14
+local auraInputCorner = Instance.new("UICorner")
+auraInputCorner.CornerRadius = UDim.new(0, 6)
+auraInputCorner.Parent = AuraRangeInput
+
+AuraToggleButton.Name = "AuraToggleButton"
+AuraToggleButton.Parent = MainFrame
+AuraToggleButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
+AuraToggleButton.Position = UDim2.new(0.05, 0, 0.75, 0)
+AuraToggleButton.Size = UDim2.new(0.9, 0, 0.08, 0)
+AuraToggleButton.Font = Enum.Font.GothamBold
+AuraToggleButton.Text = "AURA: OFF"
+AuraToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+AuraToggleButton.TextSize = 16
+local auraToggleCorner = Instance.new("UICorner")
+auraToggleCorner.CornerRadius = UDim.new(0, 6)
+auraToggleCorner.Parent = AuraToggleButton
+
+StatusLabel.Name = "StatusLabel"
+StatusLabel.Parent = MainFrame
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Position = UDim2.new(0.05, 0, 0.85, 0)
+StatusLabel.Size = UDim2.new(0.9, 0, 0.12, 0)
+StatusLabel.Font = Enum.Font.Gotham
+StatusLabel.Text = ""
+StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+StatusLabel.TextSize = 12
+StatusLabel.TextWrapped = true
+
+-- Utility Functions (Tidak ada perubahan)
+local function ShowStatus(message, color, duration)
+    StatusLabel.Text = message
+    StatusLabel.TextColor3 = color or Color3.fromRGB(255, 255, 255)
+    task.delay(duration or 3, function()
+        if StatusLabel.Text == message then
+            StatusLabel.Text = ""
+        end
+    end)
+end
+
+local function GetPlayer(Name)
+    Name = Name:lower()
+    for _, playerObj in ipairs(Players:GetPlayers()) do
+        if playerObj ~= Player and (playerObj.Name:lower():match("^" .. Name) or playerObj.DisplayName:lower():match("^" .. Name)) then
+            return playerObj
+        end
+    end
+    return nil
+end
+
+local function UpdatePlayerList(searchText)
+    searchText = searchText or ""
+    for _, child in ipairs(PlayerList:GetChildren()) do
+        if child:IsA("TextButton") then
+            child:Destroy()
+        end
+    end
+    local playersToShow = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= Player then
+            if searchText == "" or p.Name:lower():match(searchText:lower()) or p.DisplayName:lower():match(searchText:lower()) then
+                table.insert(playersToShow, p)
+            end
+        end
+    end
+    table.sort(playersToShow, function(a,b) return a.DisplayName:lower() < b.DisplayName:lower() end)
+    for _, p in ipairs(playersToShow) do
+        local playerButton = Instance.new("TextButton")
+        playerButton.Size = UDim2.new(1, -8, 0, 25)
+        playerButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        playerButton.Text = p.DisplayName .. " (@" .. p.Name .. ")"
+        playerButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        playerButton.TextSize = 14
+        playerButton.Font = Enum.Font.Gotham
+        playerButton.Parent = PlayerList
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 4)
+        btnCorner.Parent = playerButton
+        playerButton.MouseButton1Click:Connect(function()
+            SearchBox.Text = p.Name
+        end)
+    end
+    PlayerList.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y)
+end
+
+
+--- =================================================================================================
+--- [[ FUNGSI FLINGPLAYER V3 ]] - Logika Brutal dengan Weaving Directional & Anti-Overlap
+--- =================================================================================================
+local function FlingPlayer(targetPlayer, isFromAura)
+    if isFlinging then return false end -- [PENTING] Mencegah fling baru jika sudah ada yang berjalan
+    isFlinging = true -- Kunci flag
+
+    isFromAura = isFromAura or false
+    local success, flingActuallyHappened = false, false
+    local originalLocalPos, originalCameraSubject
+
+    -- Panggil semua dalam pcall untuk menangkap error dan memastikan cleanup selalu berjalan
+    local err = pcall(function()
+        -- Validasi awal
+        local localPlayerCharacter = Player.Character
+        local localHumanoid = localPlayerCharacter and localPlayerCharacter:FindFirstChildOfClass("Humanoid")
+        local localRootPart = localHumanoid and localHumanoid.RootPart
+        if not (localPlayerCharacter and localHumanoid and localRootPart) then
+            error("Karakter Anda tidak valid.")
+        end
+
+        local targetCharacter = targetPlayer.Character
+        local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+        local targetRootPart = targetHumanoid and targetHumanoid.RootPart
+        if not (targetCharacter and targetHumanoid and targetRootPart) then
+            error(targetPlayer.DisplayName .. " tidak memiliki karakter yang valid.")
+        end
+        
+        if targetHumanoid.Sit or targetHumanoid:GetState() == Enum.HumanoidStateType.Seated then
+            error(targetPlayer.DisplayName .. " sedang duduk.")
+        end
+
+        -- Simpan state penting SEBELUM fling
+        originalLocalPos = localRootPart.CFrame
+        originalCameraSubject = workspace.CurrentCamera.CameraSubject
+        
+        -- Teleportasi awal untuk mengurangi lag
+        localRootPart.CFrame = targetRootPart.CFrame + Vector3.new(0, 5, 0)
+        task.wait(0.05)
+
+        -- Proses Fling Utama
+        workspace.CurrentCamera.CameraSubject = targetRootPart
+        localHumanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+
+        local startTime = tick()
+        local angle = 0
+
+        while tick() - startTime < FLING_DURATION do
+            if not (targetRootPart and targetRootPart.Parent and localRootPart and localRootPart.Parent) then
+                error("Target atau karakter lokal hilang saat proses fling.")
+            end
+
+            angle = angle + 150 -- Rotasi lebih cepat
+            local predictedTargetPos = targetRootPart.Position + (targetRootPart.AssemblyLinearVelocity * PREDICTION_TIME)
+
+            -- [[ LOGIKA BARU: WEAVING DIRECTIONAL ]]
+            local targetVelocity = targetRootPart.AssemblyLinearVelocity
+            local weaveDirection
+            if targetVelocity.Magnitude > 1 then -- Jika target bergerak
+                weaveDirection = targetVelocity.Unit
+            else -- Jika target diam, gunakan arah dari kita ke target
+                weaveDirection = (targetRootPart.Position - localRootPart.Position).Unit
+            end
+            
+            -- Jarak maju-mundur disesuaikan
+            local weaveDistance = math.clamp(targetHumanoid.WalkSpeed / 2, 5, 15)
+            local weaveOffset = weaveDirection * math.sin(math.rad(angle * 2.5)) * weaveDistance
+            
+            -- Loop melalui beberapa offset untuk cakupan maksimal
+            for _, baseOffset in ipairs({ CFrame.new(0,0,0), CFrame.new(0,2,0), CFrame.new(0,-2,0), CFrame.new(2.5,0,2.5), CFrame.new(-2.5,0,-2.5) }) do
+                if not (targetRootPart and targetRootPart.Parent and localRootPart and localRootPart.Parent) then break end
+                
+                -- Gabungkan semua: Posisi target + offset tenun + offset dasar + rotasi brutal
+                localRootPart.CFrame = CFrame.new(predictedTargetPos + weaveOffset) * baseOffset * CFrame.Angles(math.rad(angle), math.rad(angle/1.5), math.rad(angle/2))
+
+                -- Terapkan kecepatan secara konstan dan masif
+                localRootPart.AssemblyLinearVelocity = Vector3.new(MAX_VELOCITY, MAX_VELOCITY, MAX_VELOCITY)
+                localRootPart.AssemblyAngularVelocity = Vector3.new(MAX_VELOCITY, MAX_VELOCITY, MAX_VELOCITY)
+            end
+            RunService.Heartbeat:Wait() -- Ganti task.wait() dengan Heartbeat untuk presisi
+        end
+        flingActuallyHappened = true
+    end)
+
+    -- [[ LOGIKA PEMBERSIHAN SUPER AMAN (CLEANUP) ]]
+    -- Bagian ini akan selalu berjalan, baik pcall sukses maupun gagal.
+    
+    local currentLocalCharacter = Player.Character
+    local currentLocalHumanoid = currentLocalCharacter and currentLocalCharacter:FindFirstChildOfClass("Humanoid")
+    local currentLocalRootPart = currentLocalHumanoid and currentLocalHumanoid.RootPart
+
+    -- Kembalikan state humanoid
+    if currentLocalHumanoid then
+        currentLocalHumanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+    end
+
+    -- Kembalikan kamera
+    if workspace.CurrentCamera and originalCameraSubject then
+        workspace.CurrentCamera.CameraSubject = currentLocalHumanoid or originalCameraSubject
+    end
+
+    -- Proses pengembalian posisi yang aman
+    if currentLocalRootPart and currentLocalHumanoid and currentLocalHumanoid.Health > 0 and originalLocalPos then
+        currentLocalRootPart.Anchored = true
+        task.wait()
+        currentLocalRootPart.CFrame = originalLocalPos
+        
+        for _, part in ipairs(currentLocalCharacter:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.AssemblyLinearVelocity = Vector3.new(0,0,0)
+                part.AssemblyAngularVelocity = Vector3.new(0,0,0)
+            end
+        end
+        task.wait()
+        
+        currentLocalRootPart.Anchored = false
+        currentLocalHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        
+        success = true -- Anggap cleanup sukses
+    else
+        if not isFromAura then
+            ShowStatus("Karakter hilang/mati. Tidak bisa kembali ke posisi awal.", Color3.fromRGB(255, 0, 0), 4)
+        end
+        success = false
+    end
+
+    -- Tampilkan status berdasarkan hasil
+    if not isFromAura then
+        if not err then -- Jika pcall gagal
+            ShowStatus("Error Fling: " .. tostring(flingActuallyHappened), Color3.fromRGB(255, 0, 0), 3.5) -- flingActuallyHappened akan berisi pesan error
+        elseif flingActuallyHappened then
+            ShowStatus("Fling brutal sukses pada " .. targetPlayer.DisplayName .. "!", Color3.fromRGB(60, 255, 60), 2)
+        end
+    end
+    
+    isFlinging = false -- [PENTING] Buka kunci flag setelah semua selesai
+    return err and flingActuallyHappened
+end
+
+-- Event Connections
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    if searchDebounceThread then task.cancel(searchDebounceThread) end
+    searchDebounceThread = task.delay(searchDebounceTime, function()
+        if SearchBox then UpdatePlayerList(SearchBox.Text) end
+        searchDebounceThread = nil
+    end)
+end)
+
+FlingPlayerButton.MouseButton1Click:Connect(function()
+    if isFlinging then
+        ShowStatus("Fling lain sedang berjalan...", Color3.fromRGB(255, 150, 0))
+        return
+    end
+    local targetName = SearchBox.Text
+    if targetName == "" then
+        ShowStatus("Masukkan nama pemain.", Color3.fromRGB(255, 150, 0))
+        return
+    end
+    local targetPlayer = GetPlayer(targetName)
+    if targetPlayer then
+        ShowStatus("Flinging " .. targetPlayer.DisplayName .. "...", Color3.fromRGB(255, 255, 100), 1.5)
+        task.spawn(FlingPlayer, targetPlayer, false)
+    else
+        ShowStatus("Pemain '" .. targetName .. "' tidak ditemukan!", Color3.fromRGB(255, 50, 50))
+    end
+end)
+
+FlingAllPlayersButton.MouseButton1Click:Connect(function()
+    if isFlinging then
+        ShowStatus("Fling lain sedang berjalan...", Color3.fromRGB(255, 150, 0))
+        return
+    end
+    local otherPlayersToFling = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= Player then table.insert(otherPlayersToFling, p) end
+    end
+    if #otherPlayersToFling == 0 then
+        ShowStatus("Tidak ada pemain lain.", Color3.fromRGB(255, 150, 0))
+        return
+    end
+    ShowStatus("Memulai Fling All untuk " .. #otherPlayersToFling .. " pemain...", Color3.fromRGB(0, 150, 255))
+    
+    task.spawn(function()
+        local flingCount = 0
+        for i, pTarget in ipairs(otherPlayersToFling) do
+            -- Tunggu hingga fling sebelumnya selesai
+            while isFlinging do task.wait(0.1) end
+
+            if not (pTarget and pTarget.Parent) then continue end
+            if not (Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")) then
+                ShowStatus("Karakter lokal hilang. Fling All dihentikan.", Color3.fromRGB(255,50,50))
+                break
+            end
+            
+            ShowStatus("Flinging " .. pTarget.DisplayName .. " (" .. i .. "/" .. #otherPlayersToFling .. ")...", Color3.fromRGB(255,255,100), FLING_DURATION + 0.5)
+            local success = FlingPlayer(pTarget, false)
+            if success then flingCount = flingCount + 1 end
+            task.wait(0.2) -- Jeda antar fling untuk stabilitas
+        end
+        
+        while isFlinging do task.wait(0.1) end -- Tunggu fling terakhir selesai
+        if Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+            ShowStatus("Fling All selesai. Berhasil: " .. flingCount .. "/" .. #otherPlayersToFling, Color3.fromRGB(60,255,60))
+        end
+    end)
+end)
+
+AuraRangeInput.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        local newRange = tonumber(AuraRangeInput.Text)
+        if newRange and newRange > 0 and newRange < 500 then
+            auraRange = newRange
+            AuraRangeInput.Text = tostring(auraRange)
+            ShowStatus("Jarak Aura diatur ke " .. auraRange, Color3.fromRGB(100,255,100))
+        else
+            ShowStatus("Jarak tidak valid (1-499).", Color3.fromRGB(255,50,50))
+            AuraRangeInput.Text = tostring(auraRange)
+        end
+    end
+end)
+AuraRangeInput:GetPropertyChangedSignal("Text"):Connect(function()
+    local num = tonumber(AuraRangeInput.Text)
+    AuraRangeInput.TextColor3 = (num and num > 0 and num < 500) and Color3.fromRGB(255,255,255) or Color3.fromRGB(255,100,100)
+end)
+
+--- =================================================================================================
+--- [[ LOGIKA AURA V3 ]] - Stabil, Berurutan, dan Anti-Bug
+--- =================================================================================================
+AuraToggleButton.MouseButton1Click:Connect(function()
+    isAuraActive = not isAuraActive
+    if isAuraActive then
+        AuraToggleButton.Text = "AURA: ON"
+        AuraToggleButton.BackgroundColor3 = Color3.fromRGB(100, 200, 100)
+        ShowStatus("Fling Aura Aktif! Jarak: " .. auraRange, Color3.fromRGB(100,255,100))
+        
+        if auraFlingConnection then auraFlingConnection:Disconnect() end
+        recentlyFlung = {}
+        local auraCheckTimer = 0
+
+        auraFlingConnection = RunService.Heartbeat:Connect(function(dt)
+             if not isAuraActive then
+                 if auraFlingConnection then auraFlingConnection:Disconnect(); auraFlingConnection = nil; end
+                 return
+             end
+
+             auraCheckTimer = auraCheckTimer + dt
+             if auraCheckTimer >= auraCheckInterval then
+                 auraCheckTimer = 0
+
+                 if isFlinging then return end -- [PENTING] Jangan cari target baru jika sedang fling
+
+                 local localCharacter = Player.Character
+                 local localRoot = localCharacter and localCharacter:FindFirstChild("HumanoidRootPart")
+                 if not localRoot then
+                     isAuraActive = false -- Matikan otomatis jika karakter hilang
+                     return
+                 end
+
+                 local targetToFling = nil
+                 for _, otherPlayer in ipairs(Players:GetPlayers()) do
+                     if otherPlayer ~= Player and not recentlyFlung[otherPlayer] then
+                        local targetCharacter = otherPlayer.Character
+                        local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+                        if targetRoot and (localRoot.Position - targetRoot.Position).Magnitude <= auraRange then
+                             targetToFling = otherPlayer
+                             break -- Temukan satu target dan berhenti mencari
+                         end
+                     end
+                 end
+
+                 if targetToFling then
+                     -- Tandai pemain dan beri cooldown
+                     recentlyFlung[targetToFling] = true
+                     task.delay(5, function() -- Cooldown 5 detik per pemain untuk aura
+                         recentlyFlung[targetToFling] = nil
+                     end)
+                     
+                     ShowStatus("Aura mendeteksi " .. targetToFling.DisplayName, Color3.fromRGB(100,200,255), 1.5)
+                     task.spawn(FlingPlayer, targetToFling, true) -- Fling target yang ditemukan
+                 end
+             end
+        end)
+    else
+        AuraToggleButton.Text = "AURA: OFF"
+        AuraToggleButton.BackgroundColor3 = Color3.fromRGB(80, 80, 200)
+        if auraFlingConnection then
+            auraFlingConnection:Disconnect()
+            auraFlingConnection = nil
+        end
+        ShowStatus("Fling Aura Dinonaktifkan.", Color3.fromRGB(255,150,0))
+    end
+end)
+
+-- Initialize & Misc
+UpdatePlayerList()
+Players.PlayerAdded:Connect(function() task.delay(searchDebounceTime, function() if SearchBox then UpdatePlayerList(SearchBox.Text) end end) end)
+Players.PlayerRemoving:Connect(function(player)
+    task.delay(searchDebounceTime, function()
+        if SearchBox then
+            UpdatePlayerList(SearchBox.Text)
+            if SearchBox.Text == player.Name then SearchBox.Text = "" end
+        end
+    end)
+end)
+
+local function CreateHoverEffect(button)
+    local originalColor = button.BackgroundColor3
+    button.MouseEnter:Connect(function() TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = originalColor:Lerp(Color3.new(1,1,1),0.2)}):Play() end)
+    button.MouseLeave:Connect(function() TweenService:Create(button, TweenInfo.new(0.2), {BackgroundColor3 = originalColor}):Play() end)
+end
+CreateHoverEffect(FlingPlayerButton)
+CreateHoverEffect(FlingAllPlayersButton)
+CreateHoverEffect(AuraToggleButton)
+
+UserInputService.InputBegan:Connect(function(input,gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.Return and MainFrame.Visible and UserInputService:GetFocusedTextBox() == nil then
+        if SearchBox.Text ~= "" then
+            FlingPlayerButton.MouseButton1Click:Fire()
+        end
+    end
+end)
+
+print("Fling GUI V3 Loaded: Directional Weaving, Anti-Overlap, Full Stability.")
+ShowStatus("Fling GUI V3 Dimuat.", Color3.fromRGB(150,200,255), 5)
