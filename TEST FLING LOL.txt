@@ -5,9 +5,9 @@ local RunService = game:GetService("RunService")
 local Player = Players.LocalPlayer
 
 -- Constants
-local FLING_DURATION = 0.6 -- Sedikit lebih cepat untuk feel yang lebih responsif
+local FLING_DURATION = 0.38 -- Sedikit lebih cepat untuk feel yang lebih responsif
 local MAX_VELOCITY = 9e9
-local PREDICTION_TIME = 0.12 -- Waktu prediksi sedikit ditingkatkan untuk target cepat
+local PREDICTION_TIME = 0.19 -- Waktu prediksi sedikit ditingkatkan untuk target cepat
 
 -- Variables for Fling Aura
 local isAuraActive = false
@@ -267,7 +267,7 @@ local function FlingPlayer(targetPlayer, isFromAura)
     -- [[ LOGIKA BARU: Gerakan Menenun (Weaving) ]]
     -- Jarak maju-mundur disesuaikan dengan kecepatan jalan target untuk adaptasi.
     local targetWalkSpeed = targetHumanoid.WalkSpeed
-    local weaveDistance = math.clamp(targetWalkSpeed / 2.5, 4, 12) -- Jarak maju-mundur antara 4-12 stud.
+    local weaveDistance = math.clamp(targetWalkSpeed / 2.5, 4, 16) -- Jarak maju-mundur antara 4-12 stud.
 
     -- Pindah ke dekat target sebelum memulai loop intensif
     local stagingPosition = targetRootPart.Position + Vector3.new(0, 5, 0)
