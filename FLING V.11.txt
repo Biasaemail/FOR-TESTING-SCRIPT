@@ -15,9 +15,9 @@ local RunService = game:GetService("RunService")
 local Player = Players.LocalPlayer
 
 -- Constants
-local FLING_DURATION = 0.6 -- Durasi seimbang
-local MAX_VELOCITY = 1e10
-local PREDICTION_TIME = 0.12 -- Prediksi sedikit lebih jauh untuk target lincah
+local FLING_DURATION = 0.54 -- Durasi seimbang
+local MAX_VELOCITY = 9e9
+local PREDICTION_TIME = 0.22 -- Prediksi sedikit lebih jauh untuk target lincah
 
 -- State Variables
 local isFlinging = false -- [KRUSIAL] Flag untuk mencegah fling tumpang tindih dan bug
