@@ -5,13 +5,13 @@ local RunService = game:GetService("RunService")
 local Player = Players.LocalPlayer
 
 -- Constants
-local FLING_DURATION = 0.38 -- Sedikit lebih cepat untuk feel yang lebih responsif
+local FLING_DURATION = 0.5 -- Sedikit lebih cepat untuk feel yang lebih responsif
 local MAX_VELOCITY = 9e9
-local PREDICTION_TIME = 0.19 -- Waktu prediksi sedikit ditingkatkan untuk target cepat
+local PREDICTION_TIME = 0.29 -- Waktu prediksi sedikit ditingkatkan untuk target cepat
 
 -- Variables for Fling Aura
 local isAuraActive = false
-local auraRange = 20
+local auraRange = 10
 local auraCheckInterval = 0.25 -- Cek lebih sering
 local auraFlingConnection = nil
 local auraCheckTimer = 0
@@ -61,7 +61,7 @@ Title.BackgroundTransparency = 1
 Title.Position = UDim2.new(0, 0, 0.02, 0)
 Title.Size = UDim2.new(1, 0, 0.08, 0)
 Title.Font = Enum.Font.GothamBold
-Title.Text = "Fling GUI"
+Title.Text = "Fling GUI by police"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.TextSize = 20
 
