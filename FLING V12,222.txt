@@ -24,10 +24,10 @@ local CoreGui = game:GetService("CoreGui")
 local Player = Players.LocalPlayer
 
 -- Constants
-local FLING_DURATION = 0.45 -- Durasi sedikit dikurangi untuk dampak yang lebih cepat
+local FLING_DURATION = 0.5 -- Durasi sedikit dikurangi untuk dampak yang lebih cepat
 local MAX_VELOCITY = 9e9
-local PREDICTION_TIME = 0.25
-local AURA_COOLDOWN_PER_PLAYER = 3.5 -- Cooldown per pemain untuk aura (dalam detik)
+local PREDICTION_TIME = 0.35
+local AURA_COOLDOWN_PER_PLAYER = 0.5 -- Cooldown per pemain untuk aura (dalam detik)
 
 -- Variables
 local isAuraActive = false
