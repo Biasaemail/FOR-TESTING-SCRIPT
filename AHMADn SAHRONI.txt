@@ -227,32 +227,49 @@ local function UpdatePlayerList(searchText)
     PlayerList.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y)
 end
 
+-- Tabel ini berisi titik-titik hantaman di sekitar target, seperti arah kompas 3D.
+local impactVectors = {
+    -- Arah Mata Angin Utama (Jarak Dekat)
+    Vector3.new(8, 0, 0),   -- Timur
+    Vector3.new(-8, 0, 0),  -- Barat
+    Vector3.new(0, 0, 8),   -- Selatan
+    Vector3.new(0, 0, -8),  -- Utara
+    -- Arah Diagonal (Jarak Menengah, dengan variasi ketinggian)
+    Vector3.new(10, 3, 10),   -- Tenggara Atas
+    Vector3.new(-10, -3, 10),  -- Barat Daya Bawah
+    Vector3.new(10, -3, -10), -- Timur Laut Bawah
+    Vector3.new(-10, 3, -10), -- Barat Laut Atas
+    -- Arah Vertikal (Sangat Dekat)
+    Vector3.new(0, 9, 0),   -- Atas
+    Vector3.new(0, -9, 0),  -- Bawah
+    -- Arah Mata Angin (Jarak Jauh)
+    Vector3.new(15, 0, 0),   -- Timur Jauh
+    Vector3.new(-15, 0, 0),  -- Barat Jauh
+    Vector3.new(0, 0, 15),   -- Selatan Jauh
+    Vector3.new(0, 0, -15),  -- Utara Jauh
+    -- Serangan Diagonal Cepat
+    Vector3.new(6, 0, -6),
+    Vector3.new(-6, 0, 6),
+}
 
---- =================================================================================================
---- [[ FUNGSI FLINGPLAYER BARU ]] - Dengan Gerakan Menenun & Pembersihan Super Aman
---- =================================================================================================
 local function FlingPlayer(targetPlayer, isFromAura)
     isFromAura = isFromAura or false
 
-    -- Validasi awal
+-- Validasi awal (Sama seperti sebelumnya, sangat penting)
     local localPlayerCharacterAtStart = Player.Character
     local localHumanoidAtStart = localPlayerCharacterAtStart and localPlayerCharacterAtStart:FindFirstChildOfClass("Humanoid")
     local localRootPartAtStart = localHumanoidAtStart and localHumanoidAtStart.RootPart
-
     if not (localPlayerCharacterAtStart and localHumanoidAtStart and localRootPartAtStart) then
         if not isFromAura then ShowStatus("Karakter Anda tidak lengkap. Fling dibatalkan.", Color3.fromRGB(255, 50, 50), 3) end
         return false
     end
-
     local targetCharacter = targetPlayer.Character
     local targetHumanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
     local targetRootPart = targetHumanoid and targetHumanoid.RootPart
-
     if not (targetCharacter and targetHumanoid and targetRootPart) then
         if not isFromAura then ShowStatus(targetPlayer.DisplayName .. " tidak memiliki karakter. Tidak bisa fling.", Color3.fromRGB(255, 100, 0), 3) end
         return false
     end
-
     if targetHumanoid.Sit or targetHumanoid:GetState() == Enum.HumanoidStateType.Seated then
         if not isFromAura then ShowStatus(targetPlayer.DisplayName .. " sedang duduk! Dilewati.", Color3.fromRGB(255, 150, 50), 2) end
         return false
@@ -264,17 +281,11 @@ local function FlingPlayer(targetPlayer, isFromAura)
     local bodyVelocity = nil
     local flingActuallyHappened = false
 
-    -- [[ LOGIKA BARU: Gerakan Menenun (Weaving) ]]
-    -- Jarak maju-mundur disesuaikan dengan kecepatan jalan target untuk adaptasi.
-    local targetWalkSpeed = targetHumanoid.WalkSpeed
-    local weaveDistance = math.clamp(targetWalkSpeed / 2.5, 4, 16) -- Jarak maju-mundur antara 4-12 stud.
-
-    -- Pindah ke dekat target sebelum memulai loop intensif
-    local stagingPosition = targetRootPart.Position + Vector3.new(0, 5, 0)
+    -- Pindah ke dekat target untuk persiapan
+    local stagingPosition = targetRootPart.Position + Vector3.new(0, 10, 0)
     localRootPartAtStart.CFrame = CFrame.new(stagingPosition)
-    task.wait(0.1) -- Beri jeda agar engine memproses teleportasi
+    task.wait(0.05)
 
-    -- Pengecekan terakhir setelah teleportasi
     if not (Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")) then
         if not isFromAura then ShowStatus("Gagal teleport ke target. Membatalkan.", Color3.fromRGB(255, 50, 50)) end
         workspace.CurrentCamera.CameraSubject = originalCameraSubject
@@ -286,7 +297,7 @@ local function FlingPlayer(targetPlayer, isFromAura)
         workspace.CurrentCamera.CameraSubject = targetRootPart
 
         bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.Name = "FlingVelocity"
+        bodyVelocity.Name = "FlingVelocity_EXTREME"
         bodyVelocity.Velocity = Vector3.new(MAX_VELOCITY, MAX_VELOCITY, MAX_VELOCITY)
         bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
         bodyVelocity.Parent = localRootPartAtStart
@@ -294,77 +305,64 @@ local function FlingPlayer(targetPlayer, isFromAura)
         localHumanoidAtStart:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
 
         local startTime = tick()
-        local angle = 0
+        local impactIndex = 1
 
+-- [[ LOGIKA HANTAMAN BARU ]]
         while tick() - startTime < FLING_DURATION do
             if not (targetRootPart and targetRootPart.Parent) then error("Target hilang saat fling.") end
             if not (localRootPartAtStart and localRootPartAtStart.Parent) then error("Karakter lokal hilang saat fling.") end
 
-            angle = angle + 120
+            -- Prediksi posisi target untuk bidikan yang akurat
             local predictedTargetPos = targetRootPart.Position + (targetRootPart.AssemblyLinearVelocity * PREDICTION_TIME)
 
-            -- Loop melalui beberapa offset untuk cakupan maksimal
-            for _, baseOffset in ipairs({ CFrame.new(0,1.5,0), CFrame.new(0,-1.5,0), CFrame.new(2.25,1.5,-2.25), CFrame.new(-2.25,-1.5,2.25) }) do
-                if not (targetRootPart and targetRootPart.Parent and localRootPartAtStart and localRootPartAtStart.Parent) then break end
-                
-                -- [[ LOGIKA BARU: Terapkan gerakan menenun maju-mundur ]]
-                -- math.sin(angle) akan menghasilkan nilai bolak-balik antara -1 dan 1, menciptakan efek maju-mundur.
-                local weaveCFrame = CFrame.new(0, 0, math.sin(math.rad(angle * 2)) * weaveDistance)
-                
-                -- Gabungkan semua: Posisi target + offset dasar + offset tenun + rotasi
-                localRootPartAtStart.CFrame = CFrame.new(predictedTargetPos) * baseOffset * weaveCFrame * CFrame.Angles(math.rad(angle), 0, 0)
+            -- Ambil vektor hantaman berikutnya dari tabel
+            local impactVector = impactVectors[impactIndex]
+            
+            -- Hitung posisi serangan: posisi target + offset dari vektor
+            local attackPosition = predictedTargetPos + impactVector
+            
+            -- Secara instan teleport ke posisi serangan dan langsung menghadap target
+            -- Ini adalah inti dari "hantaman" dari berbagai arah
+            localRootPartAtStart.CFrame = CFrame.new(attackPosition, predictedTargetPos)
 
-                -- Terapkan kecepatan secara konstan
-                localRootPartAtStart.AssemblyLinearVelocity = Vector3.new(MAX_VELOCITY, MAX_VELOCITY, MAX_VELOCITY)
-                localRootPartAtStart.AssemblyAngularVelocity = Vector3.new(MAX_VELOCITY, MAX_VELOCITY, MAX_VELOCITY)
-                task.wait()
-            end
+            -- Terapkan kembali kecepatan secara paksa untuk memastikan daya rusak maksimal
+            localRootPartAtStart.AssemblyLinearVelocity = Vector3.new(MAX_VELOCITY, MAX_VELOCITY, MAX_VELOCITY)
+            localRootPartAtStart.AssemblyAngularVelocity = Vector3.new(MAX_VELOCITY, MAX_VELOCITY, MAX_VELOCITY)
+            
+            -- Pindah ke vektor hantaman berikutnya untuk frame selanjutnya
+            impactIndex = (impactIndex % #impactVectors) + 1
+            
+            task.wait() -- Tunggu render frame berikutnya (secepat mungkin)
         end
         flingActuallyHappened = true
     end)
 
-    -- [[ LOGIKA PEMBERSIHAN PALING AMAN ]]
-    -- Bagian ini SANGAT PENTING untuk mencegah karakter mati atau terjebak.
+-- [[ LOGIKA PEMBERSIHAN PALING AMAN ]] (Sama seperti sebelumnya, sangat penting)
     if bodyVelocity and bodyVelocity.Parent then
         bodyVelocity:Destroy()
     end
-
     local currentLocalCharacter = Player.Character
     local currentLocalHumanoid = currentLocalCharacter and currentLocalCharacter:FindFirstChildOfClass("Humanoid")
     local currentLocalRootPart = currentLocalHumanoid and currentLocalHumanoid.RootPart
-
-    -- Kembalikan state humanoid
     if currentLocalHumanoid then
         currentLocalHumanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
     elseif localHumanoidAtStart and localHumanoidAtStart.Parent then
         localHumanoidAtStart:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
     end
-
-    -- Kembalikan kamera
     workspace.CurrentCamera.CameraSubject = currentLocalHumanoid or originalCameraSubject
-
-    -- Proses pengembalian posisi yang super aman
     if currentLocalRootPart and currentLocalHumanoid and currentLocalHumanoid.Health > 0 then
-        -- 1. Hentikan semua fisika dengan meng-anchor karakter. Ini mencegah kerusakan jatuh (fall damage).
         currentLocalRootPart.Anchored = true
-        task.wait() -- Beri jeda agar engine memproses anchor
-
-        -- 2. Teleportasi karakter saat "beku"
+        task.wait()
         currentLocalRootPart.CFrame = originalLocalPos
-
-        -- 3. Reset semua kecepatan untuk memastikan tidak ada sisa momentum
         for _, part in ipairs(currentLocalCharacter:GetDescendants()) do
             if part:IsA("BasePart") then
                 part.AssemblyLinearVelocity = Vector3.new(0,0,0)
                 part.AssemblyAngularVelocity = Vector3.new(0,0,0)
             end
         end
-        task.wait() -- Beri jeda lagi setelah teleportasi
-
-        -- 4. Lepaskan anchor dan kembalikan kontrol fisika ke engine
+        task.wait()
         currentLocalRootPart.Anchored = false
-        currentLocalHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp) -- Paksa bangun untuk reset state
-
+        currentLocalHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
         if not isFromAura then
             if success and flingActuallyHappened then
                 ShowStatus("Fling sukses pada " .. targetPlayer.DisplayName .. "!", Color3.fromRGB(60, 255, 60), 2)
@@ -372,7 +370,6 @@ local function FlingPlayer(targetPlayer, isFromAura)
                 ShowStatus("Error Fling: " .. tostring(err), Color3.fromRGB(255, 0, 0), 3.5)
             end
         end
-        -- Cek kesehatan setelah semua selesai
         if currentLocalHumanoid.Health <= 0 then
             ShowStatus("PERINGATAN: Karakter Anda mati setelah fling. Mungkin terdeteksi anti-cheat.", Color3.fromRGB(255,100,0), 5)
         end
