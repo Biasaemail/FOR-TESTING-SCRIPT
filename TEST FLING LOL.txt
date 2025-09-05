@@ -5,7 +5,7 @@ local RunService = game:GetService("RunService")
 local Player = Players.LocalPlayer
 
 -- Constants
-local FLING_DURATION = 0.5 -- Sedikit lebih cepat untuk feel yang lebih responsif
+local FLING_DURATION = 0.4 -- Sedikit lebih cepat untuk feel yang lebih responsif
 local MAX_VELOCITY = 9e9
 local PREDICTION_TIME = 0.29 -- Waktu prediksi sedikit ditingkatkan untuk target cepat
 
@@ -264,15 +264,19 @@ local function FlingPlayer(targetPlayer, isFromAura)
     local bodyVelocity = nil
     local flingActuallyHappened = false
 
-    -- [[ LOGIKA BARU: Gerakan Menenun (Weaving) ]]
-    -- Jarak maju-mundur disesuaikan dengan kecepatan jalan target untuk adaptasi.
     local targetWalkSpeed = targetHumanoid.WalkSpeed
-    local weaveDistance = math.clamp(targetWalkSpeed / 2.5, 4, 16) -- Jarak maju-mundur antara 4-12 stud.
+local weaveDistance = math.clamp(targetWalkSpeed / 2, 3, 10)
+local targetLook = targetRootPart.CFrame.LookVector
+local weaveForward = targetRootPart.Position + (targetLook * weaveDistance)
+local weaveBackward = targetRootPart.Position - (targetLook * weaveDistance)
+local weaveToggle = math.floor(os.clock() % 2) == 0
+local targetWeavePosition = weaveToggle and weaveForward or weaveBackward
+localRootPartAtStart.CFrame = CFrame.new(targetWeavePosition, targetRootPart.Position)
 
     -- Pindah ke dekat target sebelum memulai loop intensif
-    local stagingPosition = targetRootPart.Position + Vector3.new(0, 5, 0)
+    local stagingPosition = targetRootPart.Position + Vector3.new(0, 0, 0)
     localRootPartAtStart.CFrame = CFrame.new(stagingPosition)
-    task.wait(0.1) -- Beri jeda agar engine memproses teleportasi
+    task.wait(0.01) -- Beri jeda agar engine memproses teleportasi
 
     -- Pengecekan terakhir setelah teleportasi
     if not (Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")) then
@@ -306,13 +310,56 @@ local function FlingPlayer(targetPlayer, isFromAura)
             -- Loop melalui beberapa offset untuk cakupan maksimal
             for _, baseOffset in ipairs({ CFrame.new(0,1.5,0), CFrame.new(0,-1.5,0), CFrame.new(2.25,1.5,-2.25), CFrame.new(-2.25,-1.5,2.25) }) do
                 if not (targetRootPart and targetRootPart.Parent and localRootPartAtStart and localRootPartAtStart.Parent) then break end
-                
-                -- [[ LOGIKA BARU: Terapkan gerakan menenun maju-mundur ]]
-                -- math.sin(angle) akan menghasilkan nilai bolak-balik antara -1 dan 1, menciptakan efek maju-mundur.
-                local weaveCFrame = CFrame.new(0, 0, math.sin(math.rad(angle * 2)) * weaveDistance)
-                
-                -- Gabungkan semua: Posisi target + offset dasar + offset tenun + rotasi
-                localRootPartAtStart.CFrame = CFrame.new(predictedTargetPos) * baseOffset * weaveCFrame * CFrame.Angles(math.rad(angle), 0, 0)
+
+local RunService = game:GetService("RunService")
+local angle = 0
+local ANGULAR_BASE = 3          -- kecepatan sudut dasar (rad/s)
+local SMOOTH_FACTOR = 8         -- smoothing (semakin besar = lebih cepat mengikuti)
+
+-- Panggil ini di dalam loop utama atau hubungkan ke RunService.Heartbeat
+RunService.Heartbeat:Connect(function(dt)
+    if not (targetRootPart and targetHumanoid and localRootPartAtStart) then return end
+
+    -- kecepatan & arah target
+    local targetVel = targetRootPart.Velocity
+    local targetSpeed = targetVel.Magnitude
+    local targetLook = targetRootPart.CFrame.LookVector
+    local moveDir = (targetSpeed > 0.5) and targetVel.Unit or targetLook
+
+    -- update sudut berdasarkan kecepatan target (adaptif)
+    local speedFactor = math.clamp(targetSpeed / 8, 0.5, 2)      -- normalisasi
+    local angularSpeed = ANGULAR_BASE * speedFactor
+    angle = angle + angularSpeed * dt
+
+    -- prediksi posisi target singkat (berdasarkan kecepatan)
+    local predictionTime = math.clamp(targetSpeed / 20, 0.08, 0.6)
+    local predictedTargetPos = targetRootPart.Position + moveDir * (targetSpeed * predictionTime)
+
+    -- amplitude weaving adaptif (maju-mundur)
+    local minWeave, maxWeave = 2, 10
+    local weaveAmplitude = math.clamp(targetSpeed / 2, minWeave, maxWeave)
+
+    -- offset dasar dari baseOffset (mendukung CFrame atau Vector3 jika ada)
+    local baseOffsetPos = Vector3.new()
+    if baseOffset then
+        if typeof(baseOffset) == "CFrame" then
+            baseOffsetPos = baseOffset.Position
+        elseif typeof(baseOffset) == "Vector3" then
+            baseOffsetPos = baseOffset
+        end
+    end
+
+    -- HITUNG OFFSET WEAVE di sepanjang LookVector (maju-mundur)
+    local weaveOffset = targetLook * (math.sin(angle) * weaveAmplitude)
+
+    -- TARGET CFRAME: prediksi posisi + base offset + weaving, menghadap ke target
+    local targetCFrame = CFrame.new(predictedTargetPos + baseOffsetPos + weaveOffset, targetRootPart.Position)
+
+    -- SMOOTH update agar nggak jitter: lerp frame-to-frame tergantung dt
+    local current = localRootPartAtStart.CFrame
+    local alpha = math.clamp(1 - math.exp(-SMOOTH_FACTOR * dt), 0, 1) -- frame-rate independent smoothing
+    localRootPartAtStart.CFrame = current:Lerp(targetCFrame, alpha)
+end)
 
                 -- Terapkan kecepatan secara konstan
                 localRootPartAtStart.AssemblyLinearVelocity = Vector3.new(MAX_VELOCITY, MAX_VELOCITY, MAX_VELOCITY)
