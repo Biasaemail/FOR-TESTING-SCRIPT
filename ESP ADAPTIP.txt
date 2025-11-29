@@ -1,0 +1,273 @@
+-- LocalScript (Advanced ESP v6 - Auto Update & Smart Caching)
+
+-- ============== LAYANAN ==============
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Teams = game:GetService("Teams")
+local workspace = game:GetService("Workspace")
+
+-- ============== PEMAIN LOKAL ==============
+local LocalPlayer = Players.LocalPlayer
+local LocalCamera = workspace.CurrentCamera
+
+-- ============== KONFIGURASI TAMPILAN (Mobile Friendly) ==============
+local ESP_SETTINGS = {
+	-- Identitas
+	NAME = "AutoESP_v6",
+	
+	-- Warna
+	COLOR_ENEMY = Color3.fromRGB(255, 50, 50),     -- Merah (Musuh)
+	COLOR_TEAM = Color3.fromRGB(0, 255, 100),      -- Hijau (Teman)
+	COLOR_NEUTRAL = Color3.fromRGB(255, 255, 255), -- Putih (Netral)
+	
+	-- Highlight (Glow Badan)
+	SHOW_HIGHLIGHT = true,
+	FILL_TRANS = 0.5,
+	OUTLINE_TRANS = 0.2,
+	
+	-- Name Tag (Nama di atas kepala)
+	SHOW_NAMETAG = true,
+	TEXT_SIZE = 14,           -- Ukuran font (pas untuk HP)
+	MAX_TEXT_DIST = 200,      -- Jarak maksimal nama terlihat (supaya layar ga penuh)
+	SHOW_HEALTH = true,       -- Tampilkan sisa darah (%)
+	
+	-- Logika Jarak
+	MAX_RENDER_DIST = 4000,   -- Jarak maksimal Highlight terlihat
+}
+
+-- ============== PENYIMPANAN DATA ==============
+local trackedPlayers = {} -- Menyimpan data koneksi & UI setiap pemain
+
+-- ============== FUNGSI BANTUAN UI ==============
+
+-- Membuat GUI Nama yang Rapi & Ramah Mobile
+local function createHeadTag()
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "ESP_Tag"
+	bb.Size = UDim2.new(0, 200, 0, 50)
+	bb.StudsOffset = Vector3.new(0, 3, 0) -- Tinggi di atas kepala
+	bb.AlwaysOnTop = true
+	bb.MaxDistance = ESP_SETTINGS.MAX_TEXT_DIST
+
+	local container = Instance.new("Frame")
+	container.Name = "Container"
+	container.BackgroundTransparency = 1
+	container.Size = UDim2.fromScale(1, 1)
+	container.Parent = bb
+
+	-- Background Hitam Transparan (Biar nama kebaca di tempat terang)
+	local bg = Instance.new("Frame")
+	bg.Name = "TextBG"
+	bg.BackgroundColor3 = Color3.new(0, 0, 0)
+	bg.BackgroundTransparency = 0.4 -- Agak transparan hitam
+	bg.Size = UDim2.fromOffset(0, 0) -- Ukuran dinamis
+	bg.Position = UDim2.fromScale(0.5, 0.5)
+	bg.AnchorPoint = Vector2.new(0.5, 0.5)
+	bg.Parent = container
+
+	local uic = Instance.new("UICorner")
+	uic.CornerRadius = UDim.new(0, 4) -- Sudut melengkung
+	uic.Parent = bg
+
+	-- Label Teks
+	local txt = Instance.new("TextLabel")
+	txt.Name = "PlayerName"
+	txt.Parent = bg
+	txt.BackgroundTransparency = 1
+	txt.Size = UDim2.fromScale(1, 1)
+	txt.Font = Enum.Font.GothamBold -- Font tebal jelas
+	txt.TextSize = ESP_SETTINGS.TEXT_SIZE
+	txt.TextColor3 = Color3.new(1, 1, 1)
+	txt.TextStrokeTransparency = 0.6
+	
+	return bb, bg, txt
+end
+
+-- Menentukan Warna berdasarkan Hubungan Tim
+local function getRelationData(player)
+	if player == LocalPlayer then return nil, nil end
+	
+	-- Cek Tim
+	if #Teams:GetTeams() > 1 and LocalPlayer.Team then
+		if player.Team == LocalPlayer.Team then
+			return "Friend", ESP_SETTINGS.COLOR_TEAM
+		else
+			return "Enemy", ESP_SETTINGS.COLOR_ENEMY
+		end
+	end
+	
+	return "Neutral", ESP_SETTINGS.COLOR_NEUTRAL
+end
+
+-- ============== LOGIKA INTI ==============
+
+-- Menghapus tracking pemain (Cleanup)
+local function cleanupPlayer(player)
+	if trackedPlayers[player] then
+		-- Hapus semua koneksi event supaya gak lag
+		for _, conn in pairs(trackedPlayers[player].connections) do
+			if conn then conn:Disconnect() end
+		end
+		-- Hapus UI fisik
+		if trackedPlayers[player].highlight then trackedPlayers[player].highlight:Destroy() end
+		if trackedPlayers[player].billboard then trackedPlayers[player].billboard:Destroy() end
+		
+		trackedPlayers[player] = nil
+	end
+end
+
+-- Mengatur ulang Visual pada Karakter baru (Respawn/Join)
+local function attachVisualsToCharacter(player, character)
+	-- Tunggu komponen penting dimuat
+	local root = character:WaitForChild("HumanoidRootPart", 10)
+	local hum = character:WaitForChild("Humanoid", 10)
+	local head = character:WaitForChild("Head", 5)
+	
+	if not root or not hum or not head then return end
+	if trackedPlayers[player] == nil then return end -- Pemain keburu keluar
+
+	local data = trackedPlayers[player]
+	
+	-- 1. Buat Highlight (Glow)
+	if ESP_SETTINGS.SHOW_HIGHLIGHT then
+		local hl = Instance.new("Highlight")
+		hl.Name = ESP_SETTINGS.NAME .. "_HL"
+		hl.Adornee = character
+		hl.Parent = character
+		hl.FillTransparency = ESP_SETTINGS.FILL_TRANS
+		hl.OutlineTransparency = ESP_SETTINGS.OUTLINE_TRANS
+		hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+		data.highlight = hl
+	end
+	
+	-- 2. Buat Name Tag
+	if ESP_SETTINGS.SHOW_NAMETAG then
+		local bb, bg, txt = createHeadTag()
+		bb.Adornee = head
+		bb.Parent = head
+		
+		data.billboard = bb
+		data.bgFrame = bg
+		data.textLabel = txt
+	end
+	
+	data.character = character
+	data.rootPart = root
+	data.humanoid = hum
+end
+
+-- Fungsi setup pemain pertama kali (Auto Update Start)
+local function setupPlayer(player)
+	if player == LocalPlayer then return end
+	
+	-- Reset data lama jika ada
+	cleanupPlayer(player)
+	
+	local connections = {}
+	trackedPlayers[player] = {
+		connections = connections,
+		character = nil,
+		rootPart = nil,
+		humanoid = nil,
+		highlight = nil,
+		billboard = nil
+	}
+	
+	-- EVENT 1: Deteksi saat karakter lahir/hidup (Respawn/Pindah Map)
+	connections.CharAdded = player.CharacterAdded:Connect(function(char)
+		attachVisualsToCharacter(player, char)
+	end)
+	
+	-- Jika karakter sudah ada saat script jalan, langsung pasang
+	if player.Character then
+		task.defer(function() attachVisualsToCharacter(player, player.Character) end)
+	end
+	
+	-- EVENT 2: Deteksi ganti Team (Update Warna Realtime)
+	-- Logic update warna akan ditangani otomatis di loop Heartbeat agar instan
+end
+
+-- ============== LOOP UTAMA (VISUAL UPDATES) ==============
+-- Loop ini berjalan setiap frame layar (~60 kali sedetik)
+RunService.Heartbeat:Connect(function()
+	local camPos = LocalCamera.CFrame.Position
+	
+	for player, data in pairs(trackedPlayers) do
+		-- Validasi dasar: Pemain harus punya karakter, darah > 0
+		if data.character and data.rootPart and data.humanoid and data.humanoid.Health > 0 then
+			
+			-- 1. Hitung Jarak
+			local dist = (data.rootPart.Position - camPos).Magnitude
+			
+			if dist <= ESP_SETTINGS.MAX_RENDER_DIST then
+				-- TENTUKAN WARNA REALTIME
+				-- (Setiap frame kita cek relasi Tim, jadi kalau kamu pindah tim, semua langsung berubah warnanya)
+				local relation, baseColor = getRelationData(player)
+				
+				-- Efek Darah Sekarat: Warna makin gelap kalau darah tipis
+				local healthPercent = data.humanoid.Health / data.humanoid.MaxHealth
+				local finalColor = baseColor:Lerp(Color3.new(0,0,0), (1 - healthPercent) * 0.6)
+				
+				-- UPDATE HIGHLIGHT
+				if data.highlight then
+					data.highlight.Enabled = true
+					data.highlight.FillColor = finalColor
+					data.highlight.OutlineColor = Color3.new(1,1,1)
+				end
+				
+				-- UPDATE NAMETAG UI
+				if data.billboard and data.textLabel and data.bgFrame then
+					-- Jika terlalu jauh dari MAX_TEXT_DIST, matikan namanya biar layar bersih
+					if dist <= ESP_SETTINGS.MAX_TEXT_DIST then
+						data.billboard.Enabled = true
+						
+						-- Teks: Nama + Darah
+						local hpText = ""
+						if ESP_SETTINGS.SHOW_HEALTH then
+							hpText = string.format(" [%d%%]", math.floor(healthPercent * 100))
+						end
+						data.textLabel.Text = player.DisplayName .. hpText
+						data.textLabel.TextColor3 = baseColor -- Teks ikut warna tim (Merah/Hijau)
+						
+						-- Atur ukuran Background otomatis (Responsif)
+						local txtSize = data.textLabel.TextBounds
+						-- Tambah padding kiri kanan
+						data.bgFrame.Size = UDim2.new(0, txtSize.X + 14, 0, txtSize.Y + 4) 
+					else
+						data.billboard.Enabled = false
+					end
+				end
+			else
+				-- Jika terlalu jauh, sembunyikan semua
+				if data.highlight then data.highlight.Enabled = false end
+				if data.billboard then data.billboard.Enabled = false end
+			end
+		else
+			-- Jika mati atau tidak ada karakter, matikan visual
+			if data.highlight then data.highlight.Enabled = false end
+			if data.billboard then data.billboard.Enabled = false end
+		end
+	end
+end)
+
+-- ============== SETUP EVENT GLOBAL ==============
+
+-- 1. Scan semua pemain yang sudah ada di server
+for _, p in ipairs(Players:GetPlayers()) do
+	setupPlayer(p)
+end
+
+-- 2. Deteksi Pemain Baru Masuk (Auto Update Join)
+Players.PlayerAdded:Connect(setupPlayer)
+
+-- 3. Deteksi Pemain Keluar (Auto Update Leave)
+Players.PlayerRemoving:Connect(cleanupPlayer)
+
+-- 4. Deteksi Jika KITA Sendiri Pindah Team (Force Refresh warna ke semua musuh)
+-- (Loop heartbeat akan menangani perubahan warna, ini hanya trigger jika perlu logika tambahan)
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+	-- Script ini menggunakan "Polling" di Heartbeat untuk warna,
+	-- jadi perubahan tim kamu akan langsung terefleksi tanpa kode tambahan di sini.
+end)
+
+print("Advanced Auto-Update ESP Loaded - Mobile Ready.")
