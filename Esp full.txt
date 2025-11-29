@@ -30,10 +30,10 @@ local NAMETAG_ENABLED = true
 local TEXT_COLOR = Color3.fromRGB(255, 255, 255)      -- Warna Teks (Putih Terang)
 local TEXT_SIZE = 14                                  -- Ukuran Font (Pas untuk Mobile)
 local SHOW_HEALTH_TEXT = true                         -- Tampilkan HP (Contoh: "Username [100%]")
-local NAMETAG_MAX_DIST = 150                          -- Jarak maksimal nama terlihat (agar layar tidak penuh)
+local NAMETAG_MAX_DIST = 15000                          -- Jarak maksimal nama terlihat (agar layar tidak penuh)
 
 -- [Jarak & Culling]
-local MAX_DISTANCE = 5000            -- Jarak maksimal ESP aktif (dalam studs)
+local MAX_DISTANCE = 50000            -- Jarak maksimal ESP aktif (dalam studs)
 local ENABLE_WALL_CHECK = true       -- Cek tembok (True = Warna berubah jika di balik tembok)
 
 -- ========================================================
