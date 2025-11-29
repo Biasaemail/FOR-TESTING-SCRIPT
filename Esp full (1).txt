@@ -1,0 +1,275 @@
+-- LocalScript (Disimpan di StarterPlayerScripts)
+
+-- ============== LAYANAN (SERVICES) ==============
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Teams = game:GetService("Teams")
+local workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+
+-- ============== PEMAIN LOKAL ==============
+local LocalPlayer = Players.LocalPlayer
+local LocalCamera = workspace.CurrentCamera
+
+-- ============== KONFIGURASI CERDAS (v5) ==============
+local ESP_NAME = "AdvancedESP_v5" -- Nama unik container
+
+-- [Warna & Identifikasi]
+local ENEMY_COLOR = Color3.fromRGB(255, 60, 60)       -- Merah Terang (Musuh)
+local TEAM_COLOR = Color3.fromRGB(85, 255, 127)       -- Hijau Terang (Teman)
+local NEUTRAL_COLOR = Color3.fromRGB(255, 255, 255)   -- Putih (Netral)
+
+-- [Highlight (Efek Tubuh)]
+local HIGHLIGHT_ENABLED = true
+local FILL_TRANSPARENCY = 0.5      -- Kebeningan isi warna
+local OUTLINE_TRANSPARENCY = 0.1   -- Kebeningan garis tepi
+local LOW_HEALTH_DARKEN = true     -- Warna jadi gelap jika darah sekarat
+
+-- [Name Tag / Teks (UI)]
+local NAMETAG_ENABLED = true
+local TEXT_COLOR = Color3.fromRGB(255, 255, 255)      -- Warna Teks (Putih Terang)
+local TEXT_SIZE = 14                                  -- Ukuran Font (Pas untuk Mobile)
+local SHOW_HEALTH_TEXT = true                         -- Tampilkan HP (Contoh: "Username [100%]")
+local NAMETAG_MAX_DIST = 15000                          -- Jarak maksimal nama terlihat (agar layar tidak penuh)
+
+-- [Jarak & Culling]
+local MAX_DISTANCE = 50000            -- Jarak maksimal ESP aktif (dalam studs)
+local ENABLE_WALL_CHECK = true       -- Cek tembok (True = Warna berubah jika di balik tembok)
+
+-- ========================================================
+
+-- Tabel penyimpanan data pemain yang sedang dilacak
+local trackedPlayers = {}
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+-- :: FUNGSI BANTUAN ::
+
+-- Menentukan apakah ada sistem tim di game ini
+local function areTeamsActive()
+	return #Teams:GetTeams() > 1
+end
+
+-- Mendapatkan relasi warna (Musuh/Teman)
+local function getRelationInfo(player)
+	if player == LocalPlayer then return nil end
+	
+	if areTeamsActive() and LocalPlayer.Team then
+		if player.Team == LocalPlayer.Team then
+			return "Team", TEAM_COLOR
+		else
+			return "Enemy", ENEMY_COLOR
+		end
+	end
+	return "Neutral", NEUTRAL_COLOR
+end
+
+-- Membuat UI Name Tag (BillboardGui)
+local function createNameTagGUI()
+	local bb = Instance.new("BillboardGui")
+	bb.Name = "ESP_NameTag"
+	bb.Adornee = nil
+	bb.Size = UDim2.new(0, 200, 0, 50) -- Ukuran canvas
+	bb.StudsOffset = Vector3.new(0, 3.5, 0) -- Posisi di atas kepala
+	bb.AlwaysOnTop = true -- Selalu terlihat menembus tembok
+	bb.MaxDistance = NAMETAG_MAX_DIST
+
+	-- Container agar rapi
+	local container = Instance.new("Frame")
+	container.Name = "Container"
+	container.Size = UDim2.fromScale(1, 1)
+	container.BackgroundTransparency = 1
+	container.Parent = bb
+
+	-- Background Hitam Transparan (Label Background)
+	local bgLabel = Instance.new("Frame")
+	bgLabel.Name = "BG"
+	bgLabel.BackgroundColor3 = Color3.new(0, 0, 0)
+	bgLabel.BackgroundTransparency = 0.4 -- Agak gelap biar tulisan kebaca
+	bgLabel.Size = UDim2.fromOffset(10, 10) -- Ukuran awal (nanti diatur otomatis textbound)
+	bgLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+	bgLabel.Position = UDim2.fromScale(0.5, 0.5)
+	bgLabel.Parent = container
+	
+	-- Membuat sudut tumpul (Rounded) biar bagus
+	local uiCorner = Instance.new("UICorner")
+	uiCorner.CornerRadius = UDim.new(0, 4)
+	uiCorner.Parent = bgLabel
+
+	-- Label Nama
+	local txt = Instance.new("TextLabel")
+	txt.Name = "NameLabel"
+	txt.Parent = bgLabel
+	txt.BackgroundTransparency = 1
+	txt.Size = UDim2.fromScale(1, 1)
+	txt.TextColor3 = TEXT_COLOR
+	txt.TextStrokeTransparency = 0.5 -- Garis pinggir hitam tipis
+	txt.TextStrokeColor3 = Color3.new(0,0,0)
+	txt.Font = Enum.Font.GothamBold
+	txt.TextSize = TEXT_SIZE
+	txt.TextXAlignment = Enum.TextXAlignment.Center
+	
+	-- Auto-size logika sederhana nanti di loop
+	return bb, txt, bgLabel
+end
+
+-- Menambah pemain ke daftar tracking
+local function addTrackedPlayer(player)
+	if player == LocalPlayer then return end
+	if trackedPlayers[player] then return end -- Sudah ada
+
+	local connections = {}
+	
+	-- Wadah data
+	local data = {
+		player = player,
+		highlight = nil,
+		billboard = nil,
+		textLabel = nil,
+		bgFrame = nil,
+		char = nil,
+		root = nil,
+		hum = nil,
+		connections = connections
+	}
+
+	-- Fungsi saat karakter lahir/respawn
+	local function charAdded(char)
+		data.char = char
+		data.root = char:WaitForChild("HumanoidRootPart", 5)
+		data.hum = char:WaitForChild("Humanoid", 5)
+
+		if not data.root or not data.hum then return end
+
+		-- 1. Buat Highlight
+		if HIGHLIGHT_ENABLED then
+			local hl = Instance.new("Highlight")
+			hl.Name = ESP_NAME.."_HL"
+			hl.FillTransparency = 1 -- Kita mulai invisible dulu
+			hl.OutlineTransparency = 1
+			hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			hl.Parent = char
+			data.highlight = hl
+		end
+
+		-- 2. Buat NameTag
+		if NAMETAG_ENABLED then
+			local bb, txt, bg = createNameTagGUI()
+			bb.Adornee = char:WaitForChild("Head", 2) or data.root
+			bb.Parent = char
+			
+			data.billboard = bb
+			data.textLabel = txt
+			data.bgFrame = bg
+		end
+		
+		-- Event mati -> bersih-bersih visual instan
+		connections.died = data.hum.Died:Connect(function()
+			if data.highlight then data.highlight.Enabled = false end
+			if data.billboard then data.billboard.Enabled = false end
+		end)
+	end
+
+	data.connections.charAdded = player.CharacterAdded:Connect(charAdded)
+	if player.Character then charAdded(player.Character) end
+
+	trackedPlayers[player] = data
+end
+
+-- Menghapus pemain dari tracking
+local function removeTrackedPlayer(player)
+	local data = trackedPlayers[player]
+	if data then
+		for _, conn in pairs(data.connections) do conn:Disconnect() end
+		trackedPlayers[player] = nil
+	end
+end
+
+-- :: LOGIKA UTAMA PER FRAME (Heartbeat) ::
+local function updateESP()
+	local camCFrame = LocalCamera.CFrame
+	local camPos = camCFrame.Position
+	raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
+
+	for player, data in pairs(trackedPlayers) do
+		-- Validasi karakter
+		if not data.char or not data.root or not data.hum or data.hum.Health <= 0 then
+			continue
+		end
+
+		local dist = (data.root.Position - camPos).Magnitude
+		local isWithinRange = dist <= MAX_DISTANCE
+
+		-- Update Logika Warna
+		local _, relationColor = getRelationInfo(player)
+		local finalColor = relationColor
+		
+		-- Cek Darah untuk memgelapkan warna highlight (Low Health Alert)
+		if LOW_HEALTH_DARKEN then
+			local healthFactor = math.clamp(data.hum.Health / data.hum.MaxHealth, 0, 1)
+			-- Lerp dari Warna Tim ke Warna Hitam jika darah rendah
+			finalColor = relationColor:Lerp(Color3.new(0,0,0), (1 - healthFactor) * 0.5) 
+		end
+
+		-- Update Highlight Properties
+		if data.highlight then
+			if isWithinRange then
+				data.highlight.Enabled = true
+				data.highlight.FillColor = finalColor
+				data.highlight.OutlineColor = Color3.new(1,1,1)
+				data.highlight.FillTransparency = FILL_TRANSPARENCY
+				data.highlight.OutlineTransparency = OUTLINE_TRANSPARENCY
+				
+				-- Wall Check Sederhana (Mengubah mode depth)
+				if ENABLE_WALL_CHECK then
+					-- Jika tembok menghalangi, kita bisa ubah Highlight jadi occluded, atau tetap AlwaysOnTop
+					-- Di script ini saya set AlwaysOnTop tetap nyala, tapi transparansi bisa dimainkan
+					-- Silakan disesuaikan.
+					data.highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				end
+			else
+				data.highlight.Enabled = false
+			end
+		end
+
+		-- Update NameTag UI
+		if data.billboard and data.textLabel and data.bgFrame then
+			-- Name Tag hanya muncul jika range highlight valid
+			if isWithinRange and data.billboard.Adornee then 
+				data.billboard.Enabled = true
+				
+				-- Format Teks: "Nama [Health]"
+				local healthDisplay = ""
+				if SHOW_HEALTH_TEXT then
+					local hp = math.floor(data.hum.Health)
+					healthDisplay = string.format(" [%d]", hp)
+				end
+				
+				data.textLabel.Text = player.DisplayName .. healthDisplay
+				
+				-- Auto Scale Ukuran Background berdasarkan panjang teks
+				local txtBounds = data.textLabel.TextBounds
+				-- Beri sedikit padding (ruang napas) sebesar 12px
+				data.bgFrame.Size = UDim2.new(0, txtBounds.X + 16, 0, txtBounds.Y + 6)
+			else
+				data.billboard.Enabled = false
+			end
+		end
+	end
+end
+
+-- :: INISIALISASI ::
+
+-- Tambah player yang sudah ada
+for _, p in ipairs(Players:GetPlayers()) do
+	addTrackedPlayer(p)
+end
+
+-- Listen player masuk/keluar
+Players.PlayerAdded:Connect(addTrackedPlayer)
+Players.PlayerRemoving:Connect(removeTrackedPlayer)
+
+-- Jalankan Loop Update
+RunService.Heartbeat:Connect(updateESP)
+
+print("Smart ESP v5: NameTag, Mobile Friendly, & Highlight Loaded!")
