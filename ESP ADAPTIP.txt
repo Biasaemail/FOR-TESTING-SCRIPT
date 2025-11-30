@@ -28,11 +28,11 @@ local ESP_SETTINGS = {
 	-- Name Tag (Nama di atas kepala)
 	SHOW_NAMETAG = true,
 	TEXT_SIZE = 14,           -- Ukuran font (pas untuk HP)
-	MAX_TEXT_DIST = 200,      -- Jarak maksimal nama terlihat (supaya layar ga penuh)
+	MAX_TEXT_DIST = 2000,      -- Jarak maksimal nama terlihat (supaya layar ga penuh)
 	SHOW_HEALTH = true,       -- Tampilkan sisa darah (%)
 	
 	-- Logika Jarak
-	MAX_RENDER_DIST = 4000,   -- Jarak maksimal Highlight terlihat
+	MAX_RENDER_DIST = 8000,   -- Jarak maksimal Highlight terlihat
 }
 
 -- ============== PENYIMPANAN DATA ==============
